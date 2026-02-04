@@ -1,0 +1,10 @@
+# RL fine-tune tracker (10 epochs)
+
+Status: DONE (exit 0)
+Started: 2026-02-04 ~02:54 UTC
+Ended: 2026-02-04 ~02:55 UTC (~45 s)
+Command: PYTHONPATH=. .venv/bin/python scripts/train_generator.py --stage rl --data data/processed/generator/smiles.tsv --resume checkpoints/generator --epochs 10
+Log: logs/rl_10ep.log
+
+Epochs 1–10 | Reward: 0.0500 each. Checkpoint saved to checkpoints/generator/
+Next: try generate_samples.py --valid-only to check SMILES validity.

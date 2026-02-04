@@ -1,0 +1,15 @@
+# Generator pretrain tracker (20 epochs)
+
+Started: 2026-02-03
+PID: 75992 (check with: ps -p 75992)
+Command: PYTHONPATH=. .venv/bin/python scripts/train_generator.py --stage pretrain --data data/processed/generator/smiles.tsv --epochs 20 --out checkpoints/generator
+Log file: logs/pretrain_20ep.log
+
+## Check progress
+  Live output: Cursor background terminal (this job).
+  grep "Epoch.*Loss" logs/pretrain_20ep.log   # after tee flushes
+  Or open terminals/849999.txt in .cursor/projects/.../terminals/
+
+## When done
+  Checkpoints saved to: checkpoints/generator/
+  Then run RL: PYTHONPATH=. .venv/bin/python scripts/train_generator.py --stage rl --data data/processed/generator/smiles.tsv --resume checkpoints/generator --epochs 10
