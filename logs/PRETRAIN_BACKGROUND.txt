@@ -1,0 +1,13 @@
+# Generator pretrain (30 epochs) - background run
+
+Started: 2026-02-09 (while user AFK)
+Command: PYTHONPATH=. python3 scripts/train_generator.py --stage pretrain --epochs 30 --limit 50000 --batch-size 64
+Log: logs/pretrain_30ep.log
+
+Check progress:
+  tail -f logs/pretrain_30ep.log
+  Or: grep "Epoch.*validity" logs/pretrain_30ep.log
+
+When done, checkpoints/generator/ will be updated. Then optionally:
+  PYTHONPATH=. python3 scripts/train_generator.py --stage rl --resume checkpoints/generator --epochs 10 --w-validity 0.75 --w-diversity 0.1
+  PYTHONPATH=. python3 scripts/generate_samples.py --model checkpoints/generator --n 500

@@ -26,7 +26,7 @@ class PhasePredictor(nn.Module):
 class CascadedPhasePredictors(nn.Module):
     """Cascaded predictors: Phase I -> Phase II -> Phase III."""
 
-    def __init__(self, in_dim: int, hidden_dim: int = 128, dropout: float = 0.2):
+    def __init__(self, in_dim: int, hidden_dim: int = 256, dropout: float = 0.15):
         super().__init__()
         self.phase1 = PhasePredictor(in_dim, hidden_dim, dropout)
         self.phase2 = PhasePredictor(in_dim + 1, hidden_dim, dropout)

@@ -1,14 +1,14 @@
-"""Run integrated SafeMolGen-DrugOracle pipeline from CLI.
+"""Run design_molecule and print per-iteration stats for monitoring.
 
-Loads generator, Oracle, and ADMET checkpoints; runs design_molecule (or generate + evaluate);
-saves result to JSON. Run from project root with PYTHONPATH=.
+Use this to verify that Oracle feedback is applied when below target_success
+and that overall_prob can improve across iterations.
 
-  PYTHONPATH=. python scripts/run_pipeline.py --out results/design_result.json
+  PYTHONPATH=. python scripts/run_design_and_monitor.py
+  PYTHONPATH=. python scripts/run_design_and_monitor.py --max-iterations 5 --safety-threshold 0.02
 """
 
 from pathlib import Path
 import argparse
-import json
 import sys
 
 import yaml
@@ -19,9 +19,11 @@ from models.integrated.pipeline import SafeMolGenDrugOracle
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run SafeMolGen-DrugOracle design pipeline")
-    parser.add_argument("--out", type=str, default="outputs/design_result.json", help="Output JSON path")
+    parser = argparse.ArgumentParser(
+        description="Run design_molecule and print per-iteration stats (for monitoring the optimization loop)"
+    )
     parser.add_argument("--target-success", type=float, default=0.25, help="Target overall success probability")
+    parser.add_argument("--safety-threshold", type=float, default=0.02, help="Minimum safety bar")
     parser.add_argument("--max-iterations", type=int, default=10, help="Max design iterations")
     parser.add_argument("--candidates-per-iteration", type=int, default=100, help="Candidates per iteration")
     parser.add_argument("--use-rl-model", action="store_true", help="Use checkpoints/generator_rl if available")
@@ -54,20 +56,50 @@ def main() -> None:
         device="cpu",
     )
 
+    print("Running design_molecule (target_success={}, safety_threshold={}, max_iterations={}) ...".format(
+        args.target_success, args.safety_threshold, args.max_iterations,
+    ))
     result = pipeline.design_molecule(
         target_success=args.target_success,
         max_iterations=args.max_iterations,
         candidates_per_iteration=args.candidates_per_iteration,
         show_progress=True,
+        safety_threshold=args.safety_threshold,
+        use_oracle_feedback=True,
     )
 
-    out_path = Path(args.out)
-    if not out_path.is_absolute():
-        out_path = project_root / out_path
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(result.to_dict(), f, indent=2)
-    print(f"Result saved to {out_path}")
+    print("\n" + "=" * 80)
+    print("PER-ITERATION MONITOR")
+    print("=" * 80)
+    for i, r in enumerate(result.iteration_history):
+        pred = r.prediction
+        smiles_short = (r.smiles[:50] + "…") if len(r.smiles) > 50 else r.smiles
+        feedback_used_next = (
+            result.iteration_history[i + 1].used_oracle_feedback
+            if i + 1 < len(result.iteration_history) else False
+        )
+        print(
+            "Iter {:2d}  overall={:.2%}  phase1={:.2%}  phase2={:.2%}  phase3={:.2%}  "
+            "passed_safety={}  used_feedback={}  feedback_for_next={}".format(
+                r.iteration,
+                pred.overall_prob,
+                pred.phase1_prob,
+                pred.phase2_prob,
+                pred.phase3_prob,
+                r.passed_safety,
+                r.used_oracle_feedback,
+                feedback_used_next,
+            )
+        )
+        print("       SMILES: {}".format(smiles_short))
+    print("=" * 80)
+    print(
+        "Final best: overall={:.2%}  target_achieved={}  total_iterations={}".format(
+            result.final_prediction.overall_prob,
+            result.target_achieved,
+            result.total_iterations,
+        )
+    )
 
 
 if __name__ == "__main__":

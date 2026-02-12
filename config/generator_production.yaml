@@ -1,0 +1,20 @@
+# Production training for SafeMolGen (best model possible).
+# Use: python scripts/train_generator.py --production
+# Or run scripts/run_production_train.sh for full pretrain + RL.
+
+pretrain:
+  epochs: 30
+  limit: 200000
+  batch_size: 128
+  checkpoint_every: 5
+  # Optional larger model (uncomment and use --d-model --num-layers in script):
+  # d_model: 384
+  # num_layers: 8
+  # dim_feedforward: 768
+
+rl:
+  epochs: 15
+  batch_size: 16
+
+# Best checkpointing: pretrain saves best by validity; RL saves best by reward.
+# Final checkpoint (model.pt) is the best, not the last epoch.

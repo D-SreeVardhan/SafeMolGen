@@ -21,7 +21,8 @@ class SMILESTokenizer:
     EOS_TOKEN = "<EOS>"
     UNK_TOKEN = "<UNK>"
 
-    SMILES_PATTERN = r"(\%\d{2}|Br|Cl|Si|Se|se|As|Te|te|@@|@|\+{1,2}|\-{1,2}|\[|\]|\(|\)|=|#|:|\/|\\|\d|\.)"
+    # Bracket atoms first (e.g. [n+], [NH3+], [Fe+2]) so they stay single tokens
+    SMILES_PATTERN = r"(\[[^\]]+\]|\%\d{2}|Br|Cl|Si|Se|se|As|Te|te|@@|@|\+{1,2}|\-{1,2}|\[|\]|\(|\)|=|#|:|\/|\\|\d|\.)"
 
     def __init__(self, vocab: Optional[Dict[str, int]] = None, max_length: int = 128):
         self.max_length = max_length
@@ -42,15 +43,34 @@ class SMILESTokenizer:
             if tok not in self.vocab:
                 self.vocab[tok] = len(self.vocab)
         self.inv_vocab = {idx: tok for tok, idx in self.vocab.items()}
+        self._round_trip_check(smiles_list)
+
+    def _round_trip_check(self, smiles_list: List[str], n_sample: int = 50) -> None:
+        try:
+            from utils.chemistry import validate_smiles
+        except ImportError:
+            return
+        subset = smiles_list[: min(n_sample, len(smiles_list))]
+        failed = 0
+        for s in subset:
+            decoded = self.decode(self.encode(s))
+            if not validate_smiles(decoded):
+                failed += 1
+        if failed:
+            print(f"Tokenizer round-trip: {failed}/{len(subset)} decoded SMILES failed validation")
 
     def tokenize(self, smiles: str) -> List[str]:
-        tokens = self.pattern.findall(smiles)
-        if tokens:
-            remainder = self.pattern.sub(" ", smiles).strip()
-            if remainder:
-                tokens.extend(list(remainder.replace(" ", "")))
-        else:
-            tokens = list(smiles)
+        tokens: List[str] = []
+        pos = 0
+        while pos < len(smiles):
+            remainder = smiles[pos:]
+            m = self.pattern.match(remainder)
+            if m:
+                tokens.append(m.group(1))
+                pos += m.end()
+            else:
+                tokens.append(smiles[pos])
+                pos += 1
         return tokens
 
     def encode(self, smiles: str) -> List[int]:
@@ -71,6 +91,8 @@ class SMILESTokenizer:
                 continue
             if tok == self.EOS_TOKEN:
                 break
+            if tok == self.UNK_TOKEN:
+                continue
             tokens.append(tok)
         return "".join(tokens)
 

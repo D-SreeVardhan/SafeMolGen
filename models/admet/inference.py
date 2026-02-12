@@ -21,7 +21,7 @@ def load_model(
     model = MultiTaskADMETPredictor(
         num_node_features, hidden_dim, num_layers, dropout, endpoint_names
     )
-    state = torch.load(checkpoint_path, map_location=device)
+    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(state["model"])
     model.to(device)
     model.eval()
@@ -37,6 +37,10 @@ def predict_smiles(
     processor = MoleculeProcessor()
     graph = processor.smiles_to_graph(smiles)
     if graph is None:
+        return {}
+    num_nodes = graph.x.size(0)
+    num_edges = graph.edge_index.size(1)
+    if num_nodes < 2 or num_edges == 0:
         return {}
     graph.batch = torch.zeros(graph.x.size(0), dtype=torch.long)
     graph = graph.to(device)

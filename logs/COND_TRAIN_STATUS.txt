@@ -1,0 +1,20 @@
+# Conditioned training – live monitor
+
+## Option B (recommended): progress bar + continuous
+Run in your terminal (from project root):
+  cd SafeMolGen-DrugOracle
+  ./scripts/watch_cond_training.sh
+  # or: python3 scripts/watch_cond_training.py
+
+You get a live progress bar (e.g. PRETRAIN Epoch 2/10 [=========>    ] 45%) and RL Reward/Validity. Ctrl+C to stop watching (training keeps running).
+
+Status file for external monitoring: logs/cond_monitor_status.txt
+  (phase, epoch, batch, loss or reward/validity, progress bar)
+
+## Logs
+- Full output: logs/cond_train_live.log
+- Flow: Pretrain (10 ep, 50k) → RL (5 ep) → checkpoints/generator_rl
+
+## When done
+- Checkpoints: checkpoints/generator (cond_dim=25), checkpoints/generator_rl
+- Use app with "Use RL model" for the conditioned pipeline.

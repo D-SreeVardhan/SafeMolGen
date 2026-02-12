@@ -19,10 +19,11 @@ class RLConfig:
     temperature: float = 0.7
     top_k: int = 20
     max_length: Optional[int] = 64
-    w_validity: float = 0.6
-    w_qed: float = 0.25
+    w_validity: float = 0.75
+    w_qed: float = 0.2
     w_oracle: float = 0.1
     w_diversity: float = 0.05
+    use_baseline: bool = True
 
 
 def _sample_with_logprobs(
@@ -33,6 +34,7 @@ def _sample_with_logprobs(
     temperature: float,
     top_k: int,
     max_length: Optional[int],
+    condition: Optional[torch.Tensor] = None,
 ) -> Tuple[List[str], torch.Tensor]:
     model.eval()
     max_length = max_length or tokenizer.max_length
@@ -40,6 +42,9 @@ def _sample_with_logprobs(
     eos_id = tokenizer.vocab[tokenizer.EOS_TOKEN]
     pad_id = tokenizer.vocab[tokenizer.PAD_TOKEN]
     unk_id = tokenizer.vocab[tokenizer.UNK_TOKEN]
+    cond_dim = getattr(model, "cond_dim", 0)
+    if cond_dim > 0 and condition is None:
+        condition = torch.zeros(1, cond_dim, device=device, dtype=torch.float32)
 
     smiles_list: List[str] = []
     logprobs: List[torch.Tensor] = []
@@ -48,7 +53,7 @@ def _sample_with_logprobs(
         logprob = torch.tensor(0.0, device=device)
         for _ in range(max_length - 1):
             input_ids = torch.tensor([ids], dtype=torch.long, device=device)
-            logits = model(input_ids)[:, -1, :]
+            logits = model(input_ids, condition=condition)[:, -1, :] if cond_dim > 0 else model(input_ids)[:, -1, :]
             logits[:, [bos_id, pad_id, unk_id]] = float("-inf")
             if top_k and top_k > 0:
                 top_vals, _ = torch.topk(logits, k=min(top_k, logits.size(-1)), dim=-1)
@@ -80,10 +85,17 @@ def train_rl(
     tokenizer,
     config: RLConfig,
     oracle_score_fn: Optional[Callable[[str], float]] = None,
+    target_condition: Optional[torch.Tensor] = None,
+    on_epoch_end: Optional[Callable[[int, float, float], None]] = None,
 ) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     model.to(config.device)
     model.train()
+    baseline = 0.0
+    baseline_momentum = 0.9
+    cond_dim = getattr(model, "cond_dim", 0)
+    if cond_dim > 0 and target_condition is not None and target_condition.device != config.device:
+        target_condition = target_condition.to(config.device)
 
     with tqdm(total=config.epochs, desc="RL Fine-tuning") as pbar:
         for epoch in range(1, config.epochs + 1):
@@ -95,6 +107,7 @@ def train_rl(
                 temperature=config.temperature,
                 top_k=config.top_k,
                 max_length=config.max_length,
+                condition=target_condition if cond_dim > 0 else None,
             )
             rewards_per_sample = compute_rewards_per_sample(
                 smiles_batch,
@@ -105,18 +118,28 @@ def train_rl(
                 w_diversity=config.w_diversity,
             )
             reward_tensor = torch.tensor(rewards_per_sample, device=config.device)
-            loss = -(reward_tensor * logprobs).mean()
+            if config.use_baseline:
+                batch_mean = reward_tensor.mean().item()
+                baseline = baseline_momentum * baseline + (1 - baseline_momentum) * batch_mean
+                advantage = reward_tensor - baseline
+            else:
+                advantage = reward_tensor
+            loss = -(advantage * logprobs).mean()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            batch_reward = compute_rewards(
+            metrics = compute_rewards(
                 smiles_batch,
                 oracle_score_fn=oracle_score_fn,
                 w_validity=config.w_validity,
                 w_qed=config.w_qed,
                 w_oracle=config.w_oracle,
                 w_diversity=config.w_diversity,
-            )["total"]
-            pbar.set_postfix(reward=f"{batch_reward:.4f}")
+            )
+            batch_reward = metrics["total"]
+            validity = metrics["validity"]
+            pbar.set_postfix(reward=f"{batch_reward:.4f}", validity=f"{validity:.2%}")
             pbar.update(1)
-            print(f"RL Epoch {epoch} | Reward: {batch_reward:.4f}")
+            print(f"RL Epoch {epoch} | Reward: {batch_reward:.4f} | Validity: {validity:.1%}")
+            if on_epoch_end is not None:
+                on_epoch_end(epoch, batch_reward, validity)

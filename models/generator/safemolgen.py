@@ -9,14 +9,14 @@ from typing import List, Optional
 import torch
 
 from models.generator.tokenizer import SMILESTokenizer
-from models.generator.transformer import TransformerDecoderModel
+from models.generator.transformer import TransformerDecoderModel, COND_DIM
 
 
 @dataclass
 class GenerationConfig:
     max_length: int = 128
-    temperature: float = 1.0
-    top_k: int = 0
+    temperature: float = 0.75
+    top_k: int = 40
     max_attempts_per_sample: int = 20
 
 
@@ -37,16 +37,19 @@ class SafeMolGen:
         state = torch.load(base / "model.pt", map_location=device, weights_only=False)
         checkpoint_max_len = state["model"]["positional.pe"].shape[1]
         max_len = max_len_override or checkpoint_max_len
+        cfg = state.get("config", {})
+        cond_dim = cfg.get("cond_dim", 0)
         model = TransformerDecoderModel(
             vocab_size=tokenizer.vocab_size,
-            d_model=state["config"]["d_model"],
-            nhead=state["config"]["nhead"],
-            num_layers=state["config"]["num_layers"],
-            dim_feedforward=state["config"]["dim_feedforward"],
-            dropout=state["config"]["dropout"],
+            d_model=cfg.get("d_model", 256),
+            nhead=cfg.get("nhead", 8),
+            num_layers=cfg.get("num_layers", 6),
+            dim_feedforward=cfg.get("dim_feedforward", 512),
+            dropout=cfg.get("dropout", 0.1),
             max_len=max_len,
+            cond_dim=cond_dim,
         )
-        model.load_state_dict(state["model"])
+        model.load_state_dict(state["model"], strict=False)
         model.to(device)
         model.eval()
         return cls(tokenizer, model)
@@ -60,11 +63,12 @@ class SafeMolGen:
     def generate(
         self,
         n: int = 10,
-        temperature: float = 1.0,
+        temperature: float = 0.75,
         max_length: Optional[int] = None,
         device: str = "cpu",
-        top_k: int = 0,
+        top_k: int = 40,
         disallow_special: bool = True,
+        condition: Optional[torch.Tensor] = None,
     ) -> List[str]:
         self.model.eval()
         max_length = max_length or self.tokenizer.max_length
@@ -72,13 +76,15 @@ class SafeMolGen:
         eos_id = self.tokenizer.vocab[self.tokenizer.EOS_TOKEN]
         pad_id = self.tokenizer.vocab[self.tokenizer.PAD_TOKEN]
         unk_id = self.tokenizer.vocab[self.tokenizer.UNK_TOKEN]
+        if condition is not None and condition.device != device:
+            condition = condition.to(device)
 
         generated = []
         for _ in range(n):
             ids = [bos_id]
             for _ in range(max_length - 1):
                 input_ids = torch.tensor([ids], dtype=torch.long, device=device)
-                logits = self.model(input_ids)[:, -1, :]
+                logits = self.model(input_ids, condition=condition)[:, -1, :]
                 if disallow_special:
                     logits[:, [bos_id, pad_id, unk_id]] = float("-inf")
                 if top_k and top_k > 0:
@@ -102,10 +108,10 @@ class SafeMolGen:
     def generate_valid(
         self,
         n: int = 10,
-        temperature: float = 1.0,
+        temperature: float = 0.75,
         max_length: Optional[int] = None,
         device: str = "cpu",
-        top_k: int = 0,
+        top_k: int = 40,
         max_attempts_per_sample: int = 20,
     ) -> List[str]:
         from utils.chemistry import validate_smiles

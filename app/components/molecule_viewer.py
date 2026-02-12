@@ -1,13 +1,17 @@
-"""Molecule visualization component using RDKit and py3Dmol."""
+"""Molecule visualization component using RDKit and optionally py3Dmol."""
 
 from typing import Optional, List
 
 import numpy as np
 import streamlit as st
 from rdkit import Chem
-from rdkit.Chem import Draw, AllChem
+from rdkit.Chem import AllChem
 from rdkit.Chem.Draw import rdMolDraw2D
-import py3Dmol
+
+try:
+    import py3Dmol
+except ImportError:
+    py3Dmol = None
 
 
 def draw_molecule_2d(
@@ -37,6 +41,12 @@ def draw_molecule_3d(
     width: int = 400,
     height: int = 300,
 ) -> None:
+    if py3Dmol is None:
+        st.info("3D view requires `pip install py3Dmol`. Showing 2D instead.")
+        svg = draw_molecule_2d(smiles, highlight_atoms=highlight_atoms, size=(width, height))
+        if svg:
+            st.image(svg, width="stretch")
+        return
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         st.error("Invalid SMILES")
@@ -75,7 +85,7 @@ def molecule_card(
         else:
             svg = draw_molecule_2d(smiles, highlight_atoms=highlight_atoms)
             if svg:
-                st.image(svg, use_column_width=True)
+                st.image(svg, width="stretch")
     with col2:
         st.code(smiles, language=None)
         if prediction:

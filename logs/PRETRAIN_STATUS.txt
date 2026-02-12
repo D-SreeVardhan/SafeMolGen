@@ -1,15 +1,25 @@
-# Generator pretrain tracker (20 epochs)
+# Generator pretrain and RL status
 
-Started: 2026-02-03
-PID: 75992 (check with: ps -p 75992)
-Command: PYTHONPATH=. .venv/bin/python scripts/train_generator.py --stage pretrain --data data/processed/generator/smiles.tsv --epochs 20 --out checkpoints/generator
-Log file: logs/pretrain_20ep.log
+## Checkpoints
 
-## Check progress
-  Live output: Cursor background terminal (this job).
-  grep "Epoch.*Loss" logs/pretrain_20ep.log   # after tee flushes
-  Or open terminals/849999.txt in .cursor/projects/.../terminals/
+- **checkpoints/generator** – Pretrain (30 epochs, ~24+ completed). Validity ~71%, uniqueness 99%.
+- **checkpoints/generator_rl** – RL fine-tuned (15 epochs, w_validity=0.85, w_diversity=0.12). Validity 95.8%, uniqueness 34% (mode collapse toward safe patterns).
 
-## When done
-  Checkpoints saved to: checkpoints/generator/
-  Then run RL: PYTHONPATH=. .venv/bin/python scripts/train_generator.py --stage rl --data data/processed/generator/smiles.tsv --resume checkpoints/generator --epochs 10
+## Metrics (500 samples)
+
+| Checkpoint       | Validity | Uniqueness |
+|------------------|----------|------------|
+| generator        | 71.5%    | 99%        |
+| generator_rl     | 95.8%    | 34%        |
+| generator_rl T=0.85 | 89.3% | 55%        |
+
+## Usage
+
+- **High validity (e.g. app “Generate”)**: use `checkpoints/generator_rl` (temp 0.7–0.8).
+- **High diversity**: use `checkpoints/generator` or generator_rl with higher temperature (0.85).
+
+## Commands
+
+  Pretrain: PYTHONPATH=. python scripts/train_generator.py --stage pretrain --epochs 30 --limit 30000
+  RL:       PYTHONPATH=. python scripts/train_generator.py --stage rl --resume checkpoints/generator --epochs 15 --w-validity 0.85 --w-diversity 0.12
+  Eval:     PYTHONPATH=. python scripts/generate_samples.py --model checkpoints/generator_rl --n 500 --temperature 0.7

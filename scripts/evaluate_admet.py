@@ -52,7 +52,9 @@ def main() -> None:
         endpoint_names=endpoint_names,
     )
     checkpoint = torch.load(
-        project_root / "checkpoints" / "admet" / "best_model.pt", map_location=device
+        project_root / "checkpoints" / "admet" / "best_model.pt",
+        map_location=device,
+        weights_only=False,
     )
     model.load_state_dict(checkpoint["model"])
 

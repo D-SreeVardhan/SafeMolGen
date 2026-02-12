@@ -10,6 +10,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from tdc.benchmark_group import admet_group
 
+from utils.chemistry import validate_smiles
+
 
 @dataclass
 class EndpointConfig:
@@ -111,3 +113,86 @@ class TDCDataLoader:
         val_df.to_csv(val_path, index=False)
         test_df.to_csv(test_path, index=False)
         return train_path, val_path, test_path
+
+
+def _get_smiles_series(df: pd.DataFrame):
+    """Get SMILES column from generator or ADMET-style DataFrame."""
+    for col in ["canonical_smiles", "smiles", "SMILES", "Drug"]:
+        if col in df.columns:
+            return df[col].dropna()
+    return df.iloc[:, 1].dropna()
+
+
+def load_and_prepare_smiles(
+    path: Path,
+    limit: int = 50000,
+    canonicalize: bool = True,
+    write_cleaned_path: Optional[Path] = None,
+) -> List[str]:
+    """
+    Load SMILES from TSV/CSV, validate, optionally canonicalize.
+    Expects a column: canonical_smiles, smiles, SMILES, or Drug (or second column).
+    Returns only valid SMILES. Logs fraction valid.
+    """
+    if path.suffix.lower() == ".tsv":
+        df = pd.read_csv(path, sep="\t", low_memory=False)
+    else:
+        df = pd.read_csv(path, low_memory=False)
+    raw = _get_smiles_series(df).astype(str).tolist()
+    raw = [s.strip() for s in raw if s.strip()][: limit * 2]
+    valid = [s for s in raw if validate_smiles(s)]
+    n_raw, n_valid = len(raw), len(valid)
+    if n_raw == 0:
+        return []
+    pct = 100.0 * n_valid / n_raw
+    print(f"Loaded {n_raw} SMILES, {n_valid} valid ({pct:.1f}%)")
+    if n_valid == 0:
+        return []
+    if canonicalize:
+        try:
+            from rdkit import Chem
+            canonical = []
+            for s in valid:
+                mol = Chem.MolFromSmiles(s)
+                if mol is not None:
+                    canonical.append(Chem.MolToSmiles(mol))
+            valid = canonical
+            print(f"Canonicalized: {len(valid)} SMILES")
+        except Exception as e:
+            print(f"Canonicalize skipped: {e}")
+    result = list(dict.fromkeys(valid))[:limit]
+    if write_cleaned_path is not None and result:
+        write_cleaned_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"smiles": result}).to_csv(
+            write_cleaned_path, index=False, header=True
+        )
+        print(f"Wrote cleaned SMILES to {write_cleaned_path}")
+    return result
+
+
+def aggregate_admet_smiles(admet_base: Path, limit: int = 50000) -> List[str]:
+    """
+    Aggregate valid SMILES from all ADMET train_val.csv under admet_base (e.g. data/admet_group).
+    Fallback when data/processed/generator/smiles.tsv is not available.
+    """
+    seen: set = set()
+    out: List[str] = []
+    for csv_path in sorted(admet_base.glob("*/train_val.csv")):
+        try:
+            df = pd.read_csv(csv_path, low_memory=False)
+            series = _get_smiles_series(df).astype(str)
+            for s in series:
+                s = s.strip()
+                if not s or s in seen:
+                    continue
+                if validate_smiles(s):
+                    seen.add(s)
+                    out.append(s)
+                    if len(out) >= limit:
+                        break
+        except Exception as e:
+            print(f"Skip {csv_path}: {e}")
+        if len(out) >= limit:
+            break
+    print(f"Aggregated {len(out)} valid SMILES from ADMET (fallback)")
+    return out

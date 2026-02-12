@@ -10,6 +10,7 @@ from models.oracle.clinical_data import load_clinical_dataset
 from models.oracle.phase_predictors import CascadedPhasePredictors
 from models.oracle.trainer import OracleTrainer
 from utils.data_utils import read_endpoints_config
+from utils.checkpoint_utils import get_admet_node_feature_dim
 
 import yaml
 
@@ -55,10 +56,11 @@ def main():
     if not admet_ckpt.exists():
         raise FileNotFoundError("ADMET checkpoint not found. Train Phase 1 first.")
 
+    num_node_features = get_admet_node_feature_dim(str(admet_ckpt))
     admet_model = load_model(
         checkpoint_path=str(admet_ckpt),
         endpoint_names=endpoint_names,
-        num_node_features=11,
+        num_node_features=num_node_features,
         hidden_dim=128,
         num_layers=3,
         dropout=0.1,

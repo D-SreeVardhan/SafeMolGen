@@ -3,6 +3,14 @@
 import sys
 from pathlib import Path
 
+# Add project root first so "app" and "models" resolve when run as streamlit run app/app.py
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+# Prevent "app" from resolving to this file's directory (so "app" stays the package)
+_app_dir = _PROJECT_ROOT / "app"
+sys.path = [p for p in sys.path if Path(p).resolve() != _app_dir]
+
 import streamlit as st
 
 from app.components.molecule_viewer import molecule_card
@@ -14,11 +22,10 @@ from app.utils.session_state import init_state
 from app.utils.caching import cache_resource
 from models.integrated.pipeline import SafeMolGenDrugOracle
 from utils.data_utils import read_endpoints_config
+from utils.checkpoint_utils import get_admet_node_feature_dim
 import yaml
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+PROJECT_ROOT = _PROJECT_ROOT
 
 st.set_page_config(
     page_title="SafeMolGen-DrugOracle",
@@ -29,8 +36,10 @@ st.set_page_config(
 
 
 @cache_resource
-def load_pipeline():
-    generator_path = PROJECT_ROOT / "checkpoints" / "generator"
+def load_pipeline(use_rl_model: bool = False):
+    generator_path = PROJECT_ROOT / "checkpoints" / "generator_rl" if use_rl_model else PROJECT_ROOT / "checkpoints" / "generator"
+    if not generator_path.exists():
+        generator_path = PROJECT_ROOT / "checkpoints" / "generator"
     oracle_path = PROJECT_ROOT / "checkpoints" / "oracle" / "best_model.pt"
     admet_path = PROJECT_ROOT / "checkpoints" / "admet" / "best_model.pt"
     if not generator_path.exists() or not oracle_path.exists() or not admet_path.exists():
@@ -41,47 +50,81 @@ def load_pipeline():
     endpoints = read_endpoints_config(endpoints_cfg)
     endpoint_names = [e.name for e in endpoints]
     endpoint_task_types = {e.name: e.task_type for e in endpoints}
+    admet_input_dim = get_admet_node_feature_dim(str(admet_path))
     return SafeMolGenDrugOracle.from_pretrained(
         generator_path=str(generator_path),
         oracle_path=str(oracle_path),
         admet_path=str(admet_path),
         endpoint_names=endpoint_names,
         endpoint_task_types=endpoint_task_types,
-        admet_input_dim=11,
+        admet_input_dim=admet_input_dim,
         device="cpu",
     )
 
 
-def generate_page(pipeline, target_success, max_iterations):
+def _render_result_into(container, result):
+    """Render a DesignResult (partial or final) into a Streamlit container."""
+    with container:
+        st.subheader("Results")
+        st.markdown("### 🏆 Best Molecule")
+        molecule_card(result.final_smiles, result.final_prediction)
+        oracle_dashboard(result.final_prediction)
+        st.markdown("### 📈 Optimization Journey")
+        iteration_timeline(result.iteration_history)
+        iteration_details(result.iteration_history)
+        st.markdown("### 💡 Recommendations")
+        recommendation_panel(result.final_prediction.recommendations)
+        if not result.target_achieved and result.iteration_history:
+            st.caption(f"⏳ Iteration {result.total_iterations} of max — updating as each iteration completes.")
+
+
+def generate_page(
+    pipeline,
+    target_success,
+    max_iterations,
+    top_k=40,
+    safety_threshold=0.2,
+    require_no_structural_alerts=False,
+    property_targets=None,
+):
     st.header("🧪 Generate New Molecules")
     if pipeline is None:
         st.warning("⚠ Models not loaded. Train models first.")
         return
     col1, col2 = st.columns([1, 2])
+    with col2:
+        results_placeholder = st.empty()
+        result = st.session_state.get("generation_result")
+        if result:
+            _render_result_into(results_placeholder, result)
     with col1:
         st.subheader("Generation Settings")
         n_molecules = st.number_input("Number of molecules to return", 1, 20, 5)
-        temperature = st.slider("Creativity (temperature)", 0.5, 1.5, 1.0, 0.1)
+        temperature = st.slider("Creativity (temperature)", 0.5, 1.5, 0.75, 0.05)
+        top_k_ui = st.slider("Top-K (trim low-prob tokens)", 0, 100, top_k, 10)
+        seed_smiles = st.text_input(
+            "Seed SMILES (optional scaffold)",
+            value="",
+            placeholder="e.g. c1ccccc1 for benzene scaffold",
+            help="Generated molecules will contain this substructure.",
+        )
+        seed_smiles = seed_smiles.strip() or None
         if st.button("🚀 Generate", type="primary", use_container_width=True):
             with st.spinner("Generating molecules..."):
                 result = pipeline.design_molecule(
                     target_success=target_success,
                     max_iterations=max_iterations,
-                    candidates_per_iteration=100,
+                    candidates_per_iteration=200,
+                    top_k=top_k_ui,
+                    safety_threshold=safety_threshold,
+                    require_no_structural_alerts=require_no_structural_alerts,
+                    use_oracle_feedback=True,
+                    property_targets=property_targets,
+                    seed_smiles=seed_smiles,
+                    on_iteration_done=lambda r: _render_result_into(results_placeholder, r),
                 )
             st.session_state["generation_result"] = result
-    with col2:
-        result = st.session_state.get("generation_result")
-        if result:
-            st.subheader("Results")
-            st.markdown("### 🏆 Best Molecule")
-            molecule_card(result.final_smiles, result.final_prediction)
-            oracle_dashboard(result.final_prediction)
-            st.markdown("### 📈 Optimization Journey")
-            iteration_timeline(result.iteration_history)
-            iteration_details(result.iteration_history)
-            st.markdown("### 💡 Recommendations")
-            recommendation_panel(result.final_prediction.recommendations)
+            _render_result_into(results_placeholder, result)
 
 
 def analyze_page(pipeline):
@@ -153,12 +196,47 @@ def main():
         st.markdown("### Settings")
         target_success = st.slider("Target Success Probability", 0.1, 0.5, 0.25, 0.05)
         max_iterations = st.slider("Max Iterations", 1, 20, 10)
+        safety_threshold = st.slider(
+            "Safety threshold (min overall prob)",
+            0.01,
+            0.5,
+            0.02,
+            0.01,
+            help="Below this, next iteration uses Oracle feedback. Use a low value (e.g. 0.02) with current models so the loop can complete.",
+        )
+        require_no_structural_alerts = st.checkbox(
+            "Require no structural alerts to pass safety",
+            value=False,
+            help="If set, failing alerts also triggers Oracle feedback.",
+        )
+        use_rl_model = st.checkbox(
+            "Use RL model",
+            value=False,
+            help="Use Oracle-fine-tuned generator (checkpoints/generator_rl) if available.",
+        )
+        st.caption(
+            "Oracle conditioning steers generation when the loaded checkpoint was trained with cond_dim>0; otherwise only avoid-substructure filtering applies."
+        )
         st.markdown("---")
         property_input()
 
-    pipeline = load_pipeline()
+    pipeline = load_pipeline(use_rl_model=use_rl_model)
+    if pipeline is not None and getattr(pipeline.generator.model, "cond_dim", 0) == 0:
+        st.warning(
+            "Oracle conditioning is disabled (generator cond_dim=0). "
+            "Only avoid-substructure filtering applies across iterations; success probability may not improve. "
+            "Train the generator with conditioned pretrain to enable steering."
+        )
+    property_targets = st.session_state.get("property_targets")
     if mode == "🧪 Generate":
-        generate_page(pipeline, target_success, max_iterations)
+        generate_page(
+            pipeline,
+            target_success,
+            max_iterations,
+            safety_threshold=safety_threshold,
+            require_no_structural_alerts=require_no_structural_alerts,
+            property_targets=property_targets,
+        )
     elif mode == "🔬 Analyze":
         analyze_page(pipeline)
     elif mode == "📊 Compare":

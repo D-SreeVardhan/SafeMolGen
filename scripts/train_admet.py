@@ -62,17 +62,22 @@ def main() -> None:
         endpoint_names=endpoint_names,
     )
 
+    endpoint_weights = cfg.get("admet_endpoint_weights") or {}
     trainer = ADMETTrainer(
         model=model,
         endpoint_configs=endpoint_dicts,
         device=device,
         lr=cfg["training"]["lr"],
         weight_decay=cfg["training"]["weight_decay"],
+        endpoint_weights=endpoint_weights,
     )
 
     best_score = -1e9
     checkpoints_dir = project_root / "checkpoints" / "admet"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        trainer.optimizer, mode="max", factor=0.5, patience=5, min_lr=1e-5
+    )
 
     for epoch in range(1, epochs + 1):
         loss = trainer.train_epoch(loaders_train)
@@ -88,8 +93,9 @@ def main() -> None:
                 value = -value
             scores.append(value)
         avg_score = float(torch.tensor(scores).nanmean().item())
+        scheduler.step(avg_score)
 
-        print(f"Epoch {epoch} | Loss: {loss:.4f} | Score: {avg_score:.4f}")
+        print(f"Epoch {epoch} | Loss: {loss:.4f} | Score: {avg_score:.4f} | LR: {trainer.optimizer.param_groups[0]['lr']:.2e}")
 
         if avg_score > best_score:
             best_score = avg_score

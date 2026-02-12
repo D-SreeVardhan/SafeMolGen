@@ -7,7 +7,13 @@ import torch
 import yaml
 
 from utils.chemistry import MoleculeProcessor
-from utils.data_utils import read_endpoints_config
+
+
+def _load_endpoint_names(config_path):
+    """Load endpoint names from endpoints.yaml (no tdc dependency)."""
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    return [item["name"] for item in cfg.get("endpoints", []) if item.get("enabled", True)]
 
 
 def _build_graphs(df: pd.DataFrame, processor: MoleculeProcessor):
@@ -24,14 +30,11 @@ def _build_graphs(df: pd.DataFrame, processor: MoleculeProcessor):
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
     endpoints_path = project_root / "config" / "endpoints.yaml"
-    with open(endpoints_path, "r", encoding="utf-8") as f:
-        endpoints_cfg = yaml.safe_load(f)
-
-    endpoints = read_endpoints_config(endpoints_cfg)
+    endpoint_names = _load_endpoint_names(endpoints_path)
     processor = MoleculeProcessor()
 
-    for endpoint in endpoints:
-        base_dir = project_root / "data" / "processed" / "admet" / endpoint.name
+    for ep_name in endpoint_names:
+        base_dir = project_root / "data" / "processed" / "admet" / ep_name
         for split in ["train", "val", "test"]:
             csv_path = base_dir / f"{split}.csv"
             if not csv_path.exists():
@@ -41,7 +44,7 @@ def main() -> None:
             graphs = _build_graphs(df, processor)
             out_path = base_dir / f"{split}.pt"
             torch.save(graphs, out_path)
-            print(f"Saved {split} graphs for {endpoint.name}: {len(graphs)}")
+            print(f"Saved {split} graphs for {ep_name}: {len(graphs)}")
 
 
 if __name__ == "__main__":

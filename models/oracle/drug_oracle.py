@@ -82,9 +82,13 @@ class DrugOracle:
             dropout=0.1,
             device=device,
         )
-        oracle = CascadedPhasePredictors(in_dim=len(endpoint_names)).to(device)
         state = torch.load(oracle_path, map_location=device, weights_only=False)
-        oracle.load_state_dict(state["model"])
+        model_state = state.get("model", state)
+        w = model_state["phase1.net.0.weight"]
+        in_dim_ckpt = int(w.shape[1])
+        hidden_dim_ckpt = int(w.shape[0])
+        oracle = CascadedPhasePredictors(in_dim=in_dim_ckpt, hidden_dim=hidden_dim_ckpt).to(device)
+        oracle.load_state_dict(model_state, strict=True)
         oracle.eval()
         return cls(oracle, admet_model, endpoint_task_types, device=device)
 

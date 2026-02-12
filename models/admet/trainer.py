@@ -1,6 +1,6 @@
 """Training logic for ADMET predictor."""
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -18,6 +18,7 @@ class ADMETTrainer:
         device: torch.device,
         lr: float,
         weight_decay: float,
+        endpoint_weights: Optional[Dict[str, float]] = None,
     ) -> None:
         self.model = model.to(device)
         self.endpoint_configs = endpoint_configs
@@ -28,6 +29,7 @@ class ADMETTrainer:
         self.loss_fns = {
             ep["name"]: get_loss(ep["task_type"]) for ep in endpoint_configs
         }
+        self.endpoint_weights = endpoint_weights or {}
 
     def train_epoch(self, loaders: Dict[str, torch.utils.data.DataLoader]) -> float:
         self.model.train()
@@ -37,13 +39,14 @@ class ADMETTrainer:
         for endpoint in self.endpoint_configs:
             name = endpoint["name"]
             loss_fn = self.loss_fns[name]
+            w = self.endpoint_weights.get(name, 1.0)
             loader = loaders[name]
             for batch in loader:
                 batch = batch.to(self.device)
                 self.optimizer.zero_grad()
                 outputs = self.model(batch.x, batch.edge_index, batch.batch)
                 preds = outputs[name]
-                loss = loss_fn(preds, batch.y.view_as(preds))
+                loss = w * loss_fn(preds, batch.y.view_as(preds))
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
