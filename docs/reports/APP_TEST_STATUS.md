@@ -1,7 +1,7 @@
 # SafeMolGen-DrugOracle App – Test Status Report
 
 **Date:** 2026-02-10  
-**App URL:** http://localhost:8502  
+**App URL:** http://localhost:5173 (React frontend); API http://localhost:8000  
 **Tester:** Automated backend + manual UI checklist
 
 ---
@@ -31,22 +31,22 @@
 ## UI Manual Test Checklist (when using the browser tab)
 
 1. **Generate**
-   - [ ] Click "Generate" in sidebar; confirm Generation Settings (number of molecules, temperature, top-K, seed SMILES) and "Generate" button are visible.
-   - [ ] Click "Generate"; confirm spinner then Results (Best Molecule, Oracle dashboard, Optimization Journey, Recommendations).
-   - [ ] Toggle "Use RL model" in sidebar; confirm pipeline reloads (check terminal log); run Generate again.
-   - [ ] Try with Safety threshold 0.02 and Max iterations 3–5; confirm iterations and "Oracle feedback used" appear in Optimization Journey.
+   - [ ] On Generate page confirm Generation parameters (target success, max iterations, top-K, seed SMILES) and "Run generation" button are visible.
+   - [ ] Click "Run generation"; confirm loading then Results (Best molecule, Oracle metrics, Optimization journey, Recommendations).
+   - [ ] Expand "Show advanced" and toggle "Use RL model"; run generation again.
+   - [ ] Try with Safety threshold 0.02 and Max iterations 3–5; confirm iteration chart and results.
 
 2. **Analyze**
-   - [ ] Switch mode to "Analyze"; enter SMILES (e.g. `CC(=O)Oc1ccccc1C(=O)O`); click "Analyze"; confirm molecule card, Oracle dashboard, and recommendations.
+   - [ ] Click "Analyze" in sidebar; enter SMILES (e.g. `CC(=O)Oc1ccccc1C(=O)O`); click "Analyze"; confirm molecule card, Oracle dashboard, and recommendations.
 
 3. **Compare**
-   - [ ] Switch mode to "Compare"; enter 2+ SMILES (one per line); click "Compare"; confirm comparison table.
+   - [ ] Click "Compare" in sidebar; enter 2+ SMILES (one per line); click "Compare"; confirm comparison table.
 
 4. **About**
-   - [ ] Switch mode to "About"; confirm overview text and bullets render.
+   - [ ] Click "About" in sidebar; confirm overview text and bullets render.
 
 ---
 
 ## Conclusion
 
-Backend code paths used by the app (load_pipeline, design_molecule, evaluate_molecule, compare_molecules) all pass. The app is running at http://localhost:8502; in-browser checks can be done manually or with a browser MCP when available.
+Backend code paths used by the app (load_pipeline, design_molecule, evaluate_molecule, compare_molecules) all pass. The app runs as FastAPI backend (port 8000) + React frontend (port 5173); in-browser checks can be done manually or with a browser MCP when available.

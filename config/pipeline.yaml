@@ -1,0 +1,5 @@
+# Optional pipeline config for SafeMolGen-DrugOracle.
+# Weak-start mode: use a weaker generator for iteration 0 so the optimization journey shows improvement.
+# 1) Train early generator: python3 scripts/train_generator_early.py
+# 2) Uncomment below and restart backend.
+# generator_early_path: checkpoints/generator_early

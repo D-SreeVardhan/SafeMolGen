@@ -1,14 +1,14 @@
 SafeMolGen-DrugOracle
 =====================
 Integrated AI system for drug design with ADMET prediction, clinical phase
-success estimation, molecule generation, and a Streamlit UI.
+success estimation, molecule generation, and a FastAPI + React UI.
 
 Project Phases
 --------------
 1. Phase 1: Project setup + ADMET predictor
 2. Phase 2: DrugOracle (clinical phase predictors + explainability)
 3. Phase 3: SafeMolGen (molecular generator)
-4. Phase 4: Integration + Streamlit UI
+4. Phase 4: Integration + FastAPI + React UI
 
 Status
 ------
@@ -54,6 +54,54 @@ For end-to-end generation with best long-term validity/uniqueness, run in this o
 6. **Generator pretrain** (aim for high validity; 30+ epochs recommended):
    `python scripts/train_generator.py --stage pretrain --epochs 30 --limit 50000 --batch-size 64`
 7. **Optional RL** (after Oracle exists): `python scripts/train_generator.py --stage rl --resume checkpoints/generator --epochs 10 --w-validity 0.75 --w-diversity 0.1`
-8. **Generate**: App via `streamlit run app/app.py`, or CLI via `python scripts/run_pipeline.py --out outputs/design_result.json`
+8. **Generate**: Web app via FastAPI backend + React frontend (see below), or CLI (see below).
+
+Run from CLI with monitoring
+-----------------------------
+From project root with `PYTHONPATH` set (or use the script):
+
+```bash
+# One-liner: run and watch live per-iteration progress (no JSON saved)
+bash scripts/run_monitor.sh
+
+# Save result to JSON
+bash scripts/run_monitor.sh --out outputs/design_result.json
+
+# Fewer iterations / candidates for quicker runs
+bash scripts/run_monitor.sh --max-iterations 5 --candidates-per-iteration 80 --out outputs/result.json
+```
+
+Or with Python directly:
+```bash
+export PYTHONPATH="${PYTHONPATH:-.}:$(pwd)"
+python3 scripts/run_pipeline.py --out outputs/design_result.json   # with save
+python3 scripts/run_pipeline.py                                     # monitor only, no save
+```
+
+Each iteration prints a line: `iter N  overall=X%  phase1=...  phase2=...  phase3=...  |  SMILES...`
+
+**All solutions (restarts + diversity + reranker):**
+```bash
+bash scripts/run_pipeline_all_solutions.sh --out outputs/result.json
+# Or: python3 scripts/run_pipeline.py --all-solutions
+# Or: --restarts 5 --selection-mode diversity --use-reranker
+# Evolutionary: python3 scripts/run_pipeline.py --evolutionary --generations 10
+```
+
+Running the web app
+-------------------
+From project root (with dependencies installed):
+
+**One command (backend + frontend):**
+```bash
+bash scripts/run_dev.sh
+```
+Then open http://localhost:5173. Use Ctrl+C to stop both.
+
+**Or run separately:**
+1. **Backend**: `python scripts/run_app.py` or `PYTHONPATH=. python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000`
+2. **Frontend**: `cd frontend && npm install && npm run dev` (dev server at http://localhost:5173; proxies /api to backend)
+
+Open http://localhost:5173 and use Generate / Analyze / Compare / About.
 
 One-shot script (if all deps and data are ready): `bash scripts/run_full_pipeline.sh`

@@ -1,6 +1,6 @@
 # MCP Browser Automation – Setup & Test Guide
 
-**App URL:** http://localhost:8502  
+**App URL:** http://localhost:5173 (React frontend; backend at http://localhost:8000)  
 **Purpose:** Enable Cursor to drive the SafeMolGen-DrugOracle UI via MCP and run automated browser tests.
 
 ---
@@ -32,11 +32,10 @@ If Cursor does not pick it up automatically:
 
 From the `SafeMolGen-DrugOracle` directory:
 
-```bash
-python3 -m streamlit run app/app.py
-```
+1. **Backend:** `python scripts/run_app.py` or `uvicorn backend.main:app --port 8000`
+2. **Frontend:** `cd frontend && npm install && npm run dev`
 
-Default URL: **http://localhost:8502**. Leave this running while you run MCP tests.
+Default frontend URL: **http://localhost:5173** (proxies /api to backend). Leave both running while you run MCP tests.
 
 ---
 
@@ -46,7 +45,7 @@ When Browser MCP tools are available (e.g. `browser_navigate`, `browser_snapshot
 
 ### 3.1 Lock/unlock
 
-1. **Navigate:** `browser_navigate` → `http://localhost:8502`
+1. **Navigate:** `browser_navigate` → `http://localhost:5173`
 2. **Lock:** `browser_lock` (required before interactions)
 3. After all steps: **Unlock:** `browser_unlock`
 
@@ -55,7 +54,7 @@ When Browser MCP tools are available (e.g. `browser_navigate`, `browser_snapshot
 1. **Snapshot** to get the page structure and element refs.
 2. Select **Generate** in the sidebar (click the corresponding element).
 3. Optionally set: Safety threshold (e.g. 0.02), Max iterations (e.g. 3–5), "Use RL model".
-4. **Click** the "Generate" button.
+4. **Click** the "Run generation" button.
 5. **Wait** for results (short waits + snapshots until Best Molecule, Oracle dashboard, Optimization Journey, Recommendations appear).
 6. **Snapshot** and verify: Best Molecule card, Oracle dashboard, Optimization Journey, Recommendations.
 
@@ -98,8 +97,7 @@ You can run browser tests from the command line without Cursor MCP:
 pip install -r requirements-e2e.txt
 playwright install chromium   # required; if tests say "Executable doesn't exist", run this
 
-# Start the app in another terminal
-python3 -m streamlit run app/app.py
+# Start the app in another terminal: backend (python scripts/run_app.py) and frontend (cd frontend && npm run dev)
 
 # Run E2E tests
 python -m pytest tests/e2e_browser_test.py -v
@@ -107,7 +105,7 @@ python -m pytest tests/e2e_browser_test.py -v
 python tests/e2e_browser_test.py
 ```
 
-Tests: app loads, About page, Analyze with SMILES. Override URL with `STREAMLIT_E2E_URL` (default http://localhost:8502). If tests fail with "Executable doesn't exist", run `playwright install chromium` once.
+Tests: app loads, About page, Analyze with SMILES. Override URL with `E2E_APP_URL` (default http://localhost:5173). If tests fail with "Executable doesn't exist", run `playwright install chromium` once.
 
 ---
 

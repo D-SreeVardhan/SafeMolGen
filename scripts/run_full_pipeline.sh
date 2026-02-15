@@ -34,4 +34,4 @@ python3 scripts/train_generator.py --stage rl --resume checkpoints/generator --e
 echo "=== 9. Run pipeline (design_molecule) ==="
 python3 scripts/run_pipeline.py --out outputs/design_result.json
 
-echo "Done. Run the app: streamlit run app/app.py"
+echo "Done. Run the app: python scripts/run_app.py (backend) and cd frontend && npm run dev (frontend)"

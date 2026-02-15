@@ -16,7 +16,7 @@ we actually use in the implementation.
 - pandas, numpy, scikit-learn, scipy (data + ML utilities)
 - SHAP, Captum (explainability)
 - Transformers (SafeMolGen model)
-- Streamlit, Plotly (UI + visualization)
+- React, FastAPI, Plotly (UI + visualization)
 - py3Dmol (3D molecule rendering)
 
 ## Tooling

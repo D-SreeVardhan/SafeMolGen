@@ -25,6 +25,6 @@ Checklist and sign-off for each phase.
 
 ## Phase 4 - Integration & UI
 - [x] Integrated pipeline implemented
-- [x] Streamlit components implemented
+- [x] React frontend + FastAPI backend implemented
 - [x] Multipage UI scaffolding added
 - [ ] End-to-end run verified

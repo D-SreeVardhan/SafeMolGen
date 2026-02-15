@@ -12,7 +12,7 @@ This document describes the end-to-end methodology, data flow, model components,
 2. **DrugOracle** — Clinical phase success estimation (Phase I → II → III) with explainability (structural alerts, risk factors, recommendations).
 3. **SafeMolGen** — SMILES-based molecular generator (transformer decoder) for candidate generation.
 4. **Integration** — Iterative design: generate candidates → score with Oracle → select best → repeat until target success or max iterations.
-5. **Streamlit UI** — Generate, Analyze, Compare molecules and view Oracle outputs.
+5. **Web UI (FastAPI + React)** — Generate, Analyze, Compare molecules and view Oracle outputs.
 
 The workflow is organized in **four phases**, each with its own data pipeline, models, and training scripts.
 
@@ -217,12 +217,12 @@ Generate novel SMILES strings. Used in the integrated pipeline to produce candid
 - `compare_molecules(smiles_list)` → list of dicts (smiles, prediction, properties), sorted by overall_prob.
 - `save_result(DesignResult, path)` → JSON export.
 
-### 6.4 Streamlit App
+### 6.4 FastAPI + React App
 
-- **Entry:** `streamlit run app/app.py` (or `scripts/run_app.py`).
-- **Pipeline load:** Cached load of SafeMolGen + DrugOracle from `checkpoints/generator`, `checkpoints/oracle`, `checkpoints/admet`; endpoints from `config/endpoints.yaml`; `admet_input_dim=11` (must match graph node feature dimension used at ADMET train time).
-- **Pages:** Generate (design_molecule, iteration viewer), Analyze (single molecule Oracle dashboard), Compare (multiple molecules), About.
-- **Generate page:** User sets target success, max iterations, top_k; on “Generate” runs `pipeline.design_molecule(...)` and shows iteration timeline and best molecule + Oracle dashboard.
+- **Entry:** Backend `uvicorn backend.main:app` (or `scripts/run_app.py`); frontend `cd frontend && npm run dev` (React at http://localhost:5173, API at http://localhost:8000).
+- **Pipeline load:** Lazy load of SafeMolGen + DrugOracle from `checkpoints/generator`, `checkpoints/oracle`, `checkpoints/admet`; endpoints from `config/endpoints.yaml`; `admet_input_dim=11` (must match graph node feature dimension used at ADMET train time).
+- **Pages:** Generate (design_molecule with SSE streaming, iteration chart), Analyze (single molecule Oracle dashboard), Compare (multiple molecules), About.
+- **Generate page:** User sets target success, max iterations, top_k; on “Generate” calls `POST /api/v1/design/stream` and shows iteration timeline and best molecule + Oracle dashboard.
 
 ---
 

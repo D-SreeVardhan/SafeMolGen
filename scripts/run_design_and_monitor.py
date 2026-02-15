@@ -1,7 +1,4 @@
-"""Run design_molecule and print per-iteration stats for monitoring.
-
-Use this to verify that Oracle feedback is applied when below target_success
-and that overall_prob can improve across iterations.
+"""Run design_molecule with live CLI monitoring and a final per-iteration table.
 
   PYTHONPATH=. python scripts/run_design_and_monitor.py
   PYTHONPATH=. python scripts/run_design_and_monitor.py --max-iterations 5 --safety-threshold 0.02
@@ -15,12 +12,27 @@ import yaml
 
 from utils.data_utils import read_endpoints_config
 from utils.checkpoint_utils import get_admet_node_feature_dim
-from models.integrated.pipeline import SafeMolGenDrugOracle
+from models.integrated.pipeline import SafeMolGenDrugOracle, DesignResult
+
+
+def _monitor_callback(result: DesignResult) -> None:
+    """Print one line per iteration as it completes."""
+    if not result.iteration_history:
+        return
+    r = result.iteration_history[-1]
+    p = r.prediction
+    smi = (r.smiles[:45] + "…") if len(r.smiles) > 45 else r.smiles
+    print(
+        "  iter {:2d}  overall={:.2%}  phase1={:.2%}  phase2={:.2%}  phase3={:.2%}  |  {}".format(
+            r.iteration, p.overall_prob, p.phase1_prob, p.phase2_prob, p.phase3_prob, smi
+        ),
+        flush=True,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run design_molecule and print per-iteration stats (for monitoring the optimization loop)"
+        description="Run design_molecule with live CLI monitoring"
     )
     parser.add_argument("--target-success", type=float, default=0.25, help="Target overall success probability")
     parser.add_argument("--safety-threshold", type=float, default=0.02, help="Minimum safety bar")
@@ -58,7 +70,8 @@ def main() -> None:
 
     print("Running design_molecule (target_success={}, safety_threshold={}, max_iterations={}) ...".format(
         args.target_success, args.safety_threshold, args.max_iterations,
-    ))
+    ), flush=True)
+    print("Live monitor:", flush=True)
     result = pipeline.design_molecule(
         target_success=args.target_success,
         max_iterations=args.max_iterations,
@@ -66,10 +79,12 @@ def main() -> None:
         show_progress=True,
         safety_threshold=args.safety_threshold,
         use_oracle_feedback=True,
+        on_iteration_done=_monitor_callback,
     )
 
-    print("\n" + "=" * 80)
-    print("PER-ITERATION MONITOR")
+    print("", flush=True)
+    print("=" * 80)
+    print("PER-ITERATION SUMMARY")
     print("=" * 80)
     for i, r in enumerate(result.iteration_history):
         pred = r.prediction
@@ -98,7 +113,8 @@ def main() -> None:
             result.final_prediction.overall_prob,
             result.target_achieved,
             result.total_iterations,
-        )
+        ),
+        flush=True,
     )
 
 

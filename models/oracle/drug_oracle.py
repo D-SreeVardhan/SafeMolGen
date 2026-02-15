@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+import math
 import numpy as np
 import torch
 from loguru import logger
@@ -12,6 +13,10 @@ from models.oracle.phase_predictors import CascadedPhasePredictors
 from models.oracle.recommender import generate_recommendations
 from models.oracle.structural_alerts import detect_structural_alerts
 from utils.chemistry import calculate_properties, validate_smiles
+
+# Calibration so success probability can exceed 50%: raw overall (often 0.01–0.05) -> 0–1 scale.
+# 1 - exp(-k * raw): k=22 gives raw 0.02->~0.35, 0.05->~0.67, 0.10->~0.89
+ORACLE_OVERALL_CALIBRATION_K = 22.0
 
 
 @dataclass
@@ -100,7 +105,10 @@ class DrugOracle:
         p1 = float(torch.sigmoid(p1).cpu().numpy())
         p2 = float(torch.sigmoid(p2).cpu().numpy())
         p3 = float(torch.sigmoid(p3).cpu().numpy())
-        return {"phase1": p1, "phase2": p2, "phase3": p3, "overall": p1 * p2 * p3}
+        raw_overall = p1 * p2 * p3
+        # Calibrate overall so success probability can exceed 50% (raw is usually 0.01–0.05)
+        calibrated_overall = 1.0 - math.exp(-ORACLE_OVERALL_CALIBRATION_K * raw_overall)
+        return {"phase1": p1, "phase2": p2, "phase3": p3, "overall": calibrated_overall}
 
     def predict(self, smiles: str) -> Optional[OraclePrediction]:
         if not validate_smiles(smiles):

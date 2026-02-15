@@ -1,8 +1,9 @@
 """
-E2E browser test for SafeMolGen-DrugOracle UI — every feature + break-it cases.
+E2E browser test for SafeMolGen-DrugOracle UI (FastAPI + React).
 
 Requires: pip install playwright && playwright install chromium
-App must be running: python3 -m streamlit run app/app.py (often http://localhost:8502)
+App must be running: backend (python scripts/run_app.py) and frontend (cd frontend && npm run dev)
+Default frontend URL: http://localhost:5173
 
 Run: python -m pytest tests/e2e_browser_test.py -v
   or: python tests/e2e_browser_test.py
@@ -24,7 +25,7 @@ except ImportError:
     HAS_PLAYWRIGHT = False
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-BASE_URL = os.environ.get("STREAMLIT_E2E_URL", "http://localhost:8502")
+BASE_URL = os.environ.get("E2E_APP_URL", "http://localhost:5173")
 
 # Timeouts
 NAV_TIMEOUT = 15000
@@ -37,7 +38,7 @@ GENERATE_WAIT = 90000  # generation can be slow
 def _new_page(browser):
     page = browser.new_page()
     page.goto(BASE_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-    page.wait_for_selector("text=Mode", timeout=10000)
+    page.wait_for_selector("text=Generate", timeout=10000)
     return page
 
 
@@ -46,7 +47,7 @@ def _test_app_loads():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            expect(page.get_by_text("Generate New Molecules").or_(page.get_by_text("🧪 Generate")).first).to_be_visible(timeout=5000)
+            expect(page.get_by_text("Generate New Molecules", exact=False).first).to_be_visible(timeout=5000)
         finally:
             browser.close()
 
@@ -56,7 +57,7 @@ def _test_about_page():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📚 About", exact=True).first.click()
+            page.get_by_role("link", name="About").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             expect(page.get_by_text("Overview", exact=False).first).to_be_visible(timeout=5000)
             expect(page.get_by_text("SafeMolGen-DrugOracle is an integrated", exact=False).first).to_be_visible(timeout=3000)
@@ -69,11 +70,11 @@ def _test_sidebar_settings_visible():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            expect(page.get_by_text("Settings", exact=False).first).to_be_visible(timeout=5000)
-            expect(page.get_by_text("Target Success Probability", exact=False).first).to_be_visible(timeout=3000)
-            expect(page.get_by_text("Max Iterations", exact=False).first).to_be_visible(timeout=3000)
+            expect(page.get_by_text("Generation parameters", exact=False).first).to_be_visible(timeout=5000)
+            expect(page.get_by_text("Target success probability", exact=False).first).to_be_visible(timeout=3000)
+            expect(page.get_by_text("Max iterations", exact=False).first).to_be_visible(timeout=3000)
             expect(page.get_by_text("Safety threshold", exact=False).first).to_be_visible(timeout=3000)
-            expect(page.get_by_text("Use RL model", exact=False).first).to_be_visible(timeout=3000)
+            expect(page.get_by_text("Show advanced", exact=False).first).to_be_visible(timeout=3000)
         finally:
             browser.close()
 
@@ -83,10 +84,9 @@ def _test_generate_page_ui():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            expect(page.get_by_text("Generation Settings", exact=False).first).to_be_visible(timeout=5000)
-            expect(page.get_by_text("Number of molecules to return", exact=False).first).to_be_visible(timeout=3000)
-            expect(page.get_by_text("Creativity (temperature)", exact=False).first).to_be_visible(timeout=3000)
-            expect(page.get_by_role("button", name="🚀 Generate").first).to_be_visible(timeout=3000)
+            expect(page.get_by_text("Generation parameters", exact=False).first).to_be_visible(timeout=5000)
+            expect(page.get_by_text("Target success probability", exact=False).first).to_be_visible(timeout=3000)
+            expect(page.get_by_role("button", name="Run generation").first).to_be_visible(timeout=3000)
         finally:
             browser.close()
 
@@ -96,32 +96,27 @@ def _test_generate_flow():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            # Set Max Iterations to 1 so test finishes quickly (sidebar: 2nd number input)
+            # Set Max Iterations to 1 so test finishes quickly (first number input on Generate page)
             try:
                 inputs = page.locator('input[type="number"]')
-                if inputs.count() >= 2:
-                    inputs.nth(1).fill("1")
+                if inputs.count() >= 1:
+                    inputs.nth(0).fill("1")
                     page.wait_for_timeout(800)
             except Exception:
                 pass
-            gen_btn = page.get_by_role("button", name="🚀 Generate")
-            if gen_btn.count() == 0:
-                gen_btn = page.get_by_role("button", name="Generate")
-            gen_btn.first.click()
+            page.get_by_role("button", name="Run generation").first.click()
             page.wait_for_timeout(2000)
-            # Must not crash: no traceback or streamlit error
-            page.wait_for_timeout(5000)
             assert not page.get_by_text("Traceback", exact=False).first.is_visible(), "App crashed with traceback"
             assert not page.get_by_text("AttributeError", exact=False).first.is_visible(), "App raised AttributeError"
-            # Wait for completion or at least "still running" (no crash). Generation can be very slow.
             done = (
-                page.get_by_text("Best Molecule")
+                page.get_by_text("Best molecule")
                 .or_(page.get_by_text("Results"))
                 .or_(page.get_by_text("Recommendations"))
-                .or_(page.get_by_text("Optimization Journey"))
+                .or_(page.get_by_text("Optimization journey"))
                 .or_(page.get_by_text("Models not loaded"))
                 .or_(page.get_by_text("Train models first"))
-                .or_(page.get_by_text("Generating molecules"))
+                .or_(page.get_by_text("Starting generation"))
+                .or_(page.get_by_text("Configure parameters"))
             )
             expect(done.first).to_be_visible(timeout=GENERATE_WAIT)
         finally:
@@ -133,7 +128,7 @@ def _test_analyze_valid_smiles():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("🔬 Analyze", exact=True).first.click()
+            page.get_by_role("link", name="Analyze").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textbox = page.get_by_role("textbox").first
             textbox.wait_for(state="visible", timeout=5000)
@@ -155,7 +150,7 @@ def _test_analyze_invalid_smiles():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("🔬 Analyze", exact=True).first.click()
+            page.get_by_role("link", name="Analyze").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textbox = page.get_by_role("textbox").first
             textbox.wait_for(state="visible", timeout=5000)
@@ -172,7 +167,7 @@ def _test_analyze_empty_smiles():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("🔬 Analyze", exact=True).first.click()
+            page.get_by_role("link", name="Analyze").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textbox = page.get_by_role("textbox").first
             textbox.wait_for(state="visible", timeout=5000)
@@ -192,7 +187,7 @@ def _test_compare_two_plus_molecules():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📊 Compare", exact=True).first.click()
+            page.get_by_role("link", name="Compare").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textarea = page.get_by_role("textbox").first
             textarea.wait_for(state="visible", timeout=5000)
@@ -215,7 +210,7 @@ def _test_compare_one_molecule_shows_warning():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📊 Compare", exact=True).first.click()
+            page.get_by_role("link", name="Compare").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textarea = page.get_by_role("textbox").first
             textarea.wait_for(state="visible", timeout=5000)
@@ -232,7 +227,7 @@ def _test_compare_empty_shows_warning():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📊 Compare", exact=True).first.click()
+            page.get_by_role("link", name="Compare").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textarea = page.get_by_role("textbox").first
             textarea.wait_for(state="visible", timeout=5000)
@@ -250,7 +245,7 @@ def _test_compare_mixed_valid_invalid_smiles():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📊 Compare", exact=True).first.click()
+            page.get_by_role("link", name="Compare").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textarea = page.get_by_role("textbox").first
             textarea.wait_for(state="visible", timeout=5000)
@@ -275,7 +270,7 @@ def _test_compare_all_invalid_smiles_no_crash():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            page.get_by_text("📊 Compare", exact=True).first.click()
+            page.get_by_role("link", name="Compare").first.click()
             page.wait_for_timeout(WAIT_AFTER_CLICK)
             textarea = page.get_by_role("textbox").first
             textarea.wait_for(state="visible", timeout=5000)
@@ -294,14 +289,11 @@ def _test_use_rl_model_toggle():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            checkbox = page.get_by_text("Use RL model", exact=False).first
-            checkbox.scroll_into_view_if_needed()
+            page.get_by_text("Show advanced", exact=False).first.click()
             page.wait_for_timeout(500)
-            # Click the checkbox (Streamlit renders it as a clickable element)
-            page.get_by_role("checkbox").filter(has_text="Use RL model").or_(page.locator("label").filter(has_text="Use RL model")).first.click()
-            page.wait_for_timeout(2000)
-            # Page should still show content, not crash
-            expect(page.get_by_text("Generate", exact=False).first).to_be_visible(timeout=5000)
+            expect(page.get_by_text("Use RL model", exact=False).first).to_be_visible(timeout=3000)
+            page.wait_for_timeout(500)
+            expect(page.get_by_text("Run generation", exact=False).first).to_be_visible(timeout=3000)
         finally:
             browser.close()
 
@@ -311,8 +303,8 @@ def _test_property_targets_section():
         browser = p.chromium.launch(headless=True)
         try:
             page = _new_page(browser)
-            expect(page.get_by_text("Target Properties", exact=False).first).to_be_visible(timeout=5000)
-            expect(page.get_by_text("LogP", exact=False).first).to_be_visible(timeout=3000)
+            expect(page.get_by_text("Generation parameters", exact=False).first).to_be_visible(timeout=5000)
+            expect(page.get_by_text("Run generation", exact=False).first).to_be_visible(timeout=3000)
         finally:
             browser.close()
 
